@@ -197,6 +197,9 @@ def _write_layer_readme(base: Path, layer: str):
 def generate_test_structure(report: PyramidReport, output_dir: str = "generated_tests", ext: str = ".md"):
     """
     Gera a estrutura de pastas e arquivos stub de teste baseada no relatorio.
+
+    O `output_dir` eh usado diretamente como raiz. Se quiser um subdiretorio
+    com o nome da feature, inclua `{feature}` no path (ex: "tests__{feature}").
     
     Args:
         report: PyramidReport gerado pelo analisador
@@ -207,8 +210,8 @@ def generate_test_structure(report: PyramidReport, output_dir: str = "generated_
         Caminho absoluto do diretorio raiz criado
     """
     feature_slug = _feature_slug(report)
-    root_name = f"tests__{feature_slug}"
-    root = Path(output_dir) / root_name
+    root_name = output_dir.replace("{feature}", feature_slug)
+    root = Path(root_name)
 
     if root.exists():
         import shutil

@@ -34,3 +34,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Project config (project-specific, each user creates their own)
+cognis.json

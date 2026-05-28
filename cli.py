@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-test-pilot: Gerador de Arquitetura de Testes baseado na Piramide de Testes.
+Cognis - Gerador de Arquitetura de Testes baseado na Piramide de Testes.
 
 Uso:
-    python cli.py "descreva a funcionalidade e regras aqui..."
+    python cli.py "descricao da funcionalidade..."
     python cli.py --file prompt.txt
     python cli.py --interactive
+    python cli.py --init-config                          # cria cognis.json
+    python cli.py -c cognis.json -f prompt.txt
+    python cli.py -c cognis.json -f prompt.txt -g        # + gera estrutura
 """
 
 import argparse
@@ -16,33 +19,69 @@ from engine import AnalysisEngine
 from pyramid import PyramidReport
 from generator import generate_test_structure
 
+CONFIG_FILENAME = "cognis.json"
+
+DEFAULT_CONFIG = {
+    "project_path": ".",
+    "output_path": "generated_tests",
+    "extension": ".md",
+    "auto_generate": False,
+    "report_dir": ".",
+    "report_filename": "PLANO_TESTES_{feature}.md"
+}
+
+
+def load_config(path):
+    if not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def merge_config_and_args(config, args):
+    """CLI args override config file values."""
+    result = dict(DEFAULT_CONFIG)
+    result.update(config)
+
+    if args.gen_dir is not None:
+        result["output_path"] = args.gen_dir
+    if args.ext is not None:
+        result["extension"] = args.ext
+    if args.generate:
+        result["auto_generate"] = True
+
+    return result
+
+
+def init_config(path):
+    if os.path.exists(path):
+        print(f"Configuracao ja existe em: {path}")
+        return
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(DEFAULT_CONFIG, f, indent=2, ensure_ascii=False)
+    print(f"Configuracao padrao criada em: {path}")
+
 
 def generate_markdown(report: PyramidReport) -> str:
     f = report.feature
     lines = []
 
-    # Header
     lines.append(f"# Plano de Testes: {f.feature_name}\n")
     lines.append(f"> **Descricao:** {f.summary}\n")
     lines.append("---\n")
 
-    # Entities & Dependencies summary
     lines.append("## Visao Geral\n")
     lines.append("| Item | Detalhes |")
     lines.append("|------|----------|")
-
     entities_str = ", ".join(e.name for e in f.entities)
     lines.append(f"| **Entidades** | {entities_str} |")
-
     deps_str = "; ".join(f"{d.name} ({d.type})" for d in f.dependencies)
     lines.append(f"| **Dependencias** | {deps_str} |")
-
     n_rules = len([r for r in f.business_rules if r.description != "Regra de negocio nao especificada"])
     lines.append(f"| **Regras** | {n_rules} identificadas |")
     lines.append(f"| **Fluxos** | {len(f.flows)} fluxos ({sum(1 for fl in f.flows if fl.is_critical)} criticos) |")
     lines.append("\n")
 
-    # Inputs / Outputs
     lines.append("## Contrato\n")
     lines.append("**Entradas:**\n")
     for inp in f.inputs:
@@ -52,7 +91,6 @@ def generate_markdown(report: PyramidReport) -> str:
         lines.append(f"- `{out}`")
     lines.append("\n---\n")
 
-    # Business rules
     lines.append("## Regras de Negocio\n")
     for i, rule in enumerate(f.business_rules, 1):
         badge = {"validation": "[VALIDACAO]", "logic": "[LOGICA]", "security": "[SEGURANCA]",
@@ -61,7 +99,6 @@ def generate_markdown(report: PyramidReport) -> str:
         lines.append(f"   *Categoria: `{rule.category}` | Camada sugerida: `{rule.layer_hint}`*  \n")
     lines.append("---\n")
 
-    # Test Pyramid
     lines.append("## Piramide de Testes\n")
     lines.append("```")
     lines.append("          [E2E] (10%)")
@@ -80,7 +117,6 @@ def generate_markdown(report: PyramidReport) -> str:
         for suite in layer.test_suites:
             lines.append(f"#### {suite.name}")
             lines.append(f"_{suite.description}_  \n")
-
             if suite.test_cases:
                 lines.append("| # | Test Case | Descricao | Entrada | Resultado Esperado |")
                 lines.append("|---|-----------|-----------|---------|---------------------|")
@@ -91,7 +127,6 @@ def generate_markdown(report: PyramidReport) -> str:
                     lines.append(f"| {tc_idx} | `{tc.name[:45]}` | {desc} | {inp} | {exp} |")
             lines.append("")
 
-    # Implementation checklist
     lines.append("---\n")
     lines.append("## Checklist de Implementacao\n")
     lines.append("""
@@ -118,7 +153,6 @@ def generate_markdown(report: PyramidReport) -> str:
 - [ ] Considerar CI/CD pipeline com paralelizacao
 """)
 
-    # Recommendations
     lines.append("\n## Recomendacoes\n")
     lines.append(f"""
 - **Stack de testes:** {" + ".join(layer.framework_hints[0] for layer in report.layers if layer.framework_hints)} (ou similar)
@@ -131,10 +165,9 @@ def generate_markdown(report: PyramidReport) -> str:
 
 
 def interactive_mode():
-    print("=== test-pilot | Gerador de Piramide de Testes ===\n")
+    print("=== Cognis | Gerador de Piramide de Testes ===\n")
     print("Cole a descricao da funcionalidade + regras de negocio.")
     print("Pressione Ctrl+Z (Enter) ou Ctrl+D quando terminar.\n")
-
     lines = []
     try:
         while True:
@@ -142,35 +175,57 @@ def interactive_mode():
             lines.append(line)
     except EOFError:
         pass
-
     return "\n".join(lines)
+
+
+def resolve_output_dir(cfg, report):
+    """Resolve o diretorio de saida com suporte a placeholder {feature}."""
+    out = cfg["output_path"]
+    slug = report.feature.feature_name.lower().replace(" ", "_")[:30]
+    out = out.replace("{feature}", slug)
+    return out
+
+
+def resolve_report_path(cfg, report):
+    """Resolve o caminho do relatorio com suporte a placeholder {feature}."""
+    slug = report.feature.feature_name.lower().replace(" ", "_")[:30]
+    filename = cfg["report_filename"].replace("{feature}", slug)
+    return os.path.join(cfg["report_dir"], filename)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="test-pilot: Gera arquitetura de testes baseada na piramide de testes",
+        description="Cognis: Gera arquitetura de testes baseada na piramide de testes",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exemplos:
-  python cli.py "Funcionalidade: Login. Regras: ..."
-  python cli.py --file descricao.txt
+  python cli.py -f descricao.txt
+  python cli.py --init-config                          # cria cognis.json
+  python cli.py -c cognis.json -f prompt.txt -g        # usa config + gera estrutura
+  python cli.py -c cognis.json --ext .spec.ts -f prompt.txt
   python cli.py --interactive
-  python cli.py --json --file prompt.txt
+  python cli.py -o relatorio.md "Funcionalidade: Login"
         """,
     )
     parser.add_argument("prompt", nargs="?", help="Descricao da funcionalidade e regras de negocio")
     parser.add_argument("--file", "-f", help="Arquivo contendo o prompt")
     parser.add_argument("--interactive", "-i", action="store_true", help="Modo interativo")
     parser.add_argument("--json", "-j", action="store_true", help="Saida em JSON")
-    parser.add_argument("--output", "-o", help="Arquivo de saida (opcional)")
-    parser.add_argument("--generate", "-g", action="store_true",
-                        help="Gerar estrutura de pastas com stubs de teste")
-    parser.add_argument("--gen-dir", default="generated_tests",
-                        help="Diretorio de saida para --generate (default: generated_tests)")
-    parser.add_argument("--ext", default=".md",
-                        help="Extensao dos arquivos de teste (default: .md)")
+    parser.add_argument("--output", "-o", help="Caminho do relatorio de saida (opcional)")
+    parser.add_argument("--generate", "-g", action="store_true", help="Gerar estrutura de pastas com stubs de teste")
+    parser.add_argument("--gen-dir", help="Diretorio de saida para --generate (default: do config)")
+    parser.add_argument("--ext", help="Extensao dos arquivos de teste (default: do config)")
+    parser.add_argument("--config", "-c", default=CONFIG_FILENAME, help=f"Caminho do config JSON (default: {CONFIG_FILENAME})")
+    parser.add_argument("--init-config", action="store_true", help="Cria arquivo de configuracao padrao")
 
     args = parser.parse_args()
+
+    if args.init_config:
+        init_config(args.config)
+        return
+
+    config = load_config(args.config)
+    cfg = merge_config_and_args(config, args)
 
     if args.interactive:
         prompt = interactive_mode()
@@ -187,8 +242,9 @@ Exemplos:
     feature = engine.analyze(prompt)
     report = PyramidReport(feature)
 
-    if args.generate:
-        path = generate_test_structure(report, output_dir=args.gen_dir, ext=args.ext)
+    if cfg["auto_generate"]:
+        output_dir = resolve_output_dir(cfg, report)
+        path = generate_test_structure(report, output_dir=output_dir, ext=cfg["extension"])
         print(f"Estrutura de testes criada em: {path}")
 
     if args.json:

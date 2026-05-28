@@ -17,6 +17,7 @@ Em vez de gastar horas pensando "o que testar?", você descreve a funcionalidade
 - [Como funciona](#como-funciona)
 - [Instalação](#instalação)
 - [Uso](#uso)
+- [Configuração](#configuração)
 - [Exemplo](#exemplo)
 - [Saídas](#saídas)
 - [Arquitetura](#arquitetura)
@@ -163,6 +164,40 @@ python cli.py -o relatorio.md "Funcionalidade: Login..."
 python cli.py --json "Funcionalidade: Login..." > arquitetura.json
 ```
 
+### Usar arquivo de configuração
+
+Crie um `cognis.json` na raiz do seu projeto (ou use `--init-config`):
+
+```bash
+python cli.py --init-config
+```
+
+Isso gera:
+
+```json
+{
+  "project_path": ".",
+  "output_path": "tests__{feature}",
+  "extension": ".test.tsx",
+  "auto_generate": true,
+  "report_dir": "testsprite_tests",
+  "report_filename": "PLANO_TESTES_{feature}.md"
+}
+```
+
+Depois é só usar:
+
+```bash
+python cli.py -f descricao.txt
+```
+
+O placeholder `{feature}` é substituído pelo nome da funcionalidade.
+CLI args sobrescrevem valores do config:
+
+```bash
+python cli.py -c cognis.json --ext .spec.ts -f descricao.txt
+```
+
 ### Combinar flags
 
 ```bash
@@ -173,6 +208,67 @@ python cli.py -f descricao.txt -g --ext .test.ts -o plano_testes.md
 
 ```bash
 python cli.py --help
+```
+
+---
+
+## Configuração
+
+O Cognis pode ser configurado via arquivo JSON (`cognis.json` por padrão).
+Isso evita repetir flags a cada execução.
+
+### Inicializar configuração padrão
+
+```bash
+python cli.py --init-config
+# Cria cognis.json com valores padrão
+```
+
+### Estrutura do config
+
+| Campo | Tipo | Padrão | Descrição |
+|-------|------|--------|-----------|
+| `project_path` | string | `"."` | Caminho do projeto alvo |
+| `output_path` | string | `"generated_tests"` | Diretório de saída da estrutura de testes. Aceita `{feature}` |
+| `extension` | string | `".md"` | Extensão dos arquivos stub gerados |
+| `auto_generate` | bool | `false` | Se `true`, gera estrutura automaticamente ao rodar |
+| `report_dir` | string | `"."` | Diretório onde salvar o relatório markdown |
+| `report_filename` | string | `"PLANO_TESTES_{feature}.md"` | Nome do arquivo de relatório. Aceita `{feature}` |
+
+### Ordem de precedência
+
+1. CLI args (`--ext`, `--gen-dir`, `--generate`) **sobrescrevem** o config
+2. Config file (`cognis.json`) **sobrescreve** os padrões
+3. Valores padrão da ferramenta
+
+### Exemplo de config para um projeto React + Vitest
+
+```json
+{
+  "project_path": ".",
+  "output_path": "tests__{feature}",
+  "extension": ".test.tsx",
+  "auto_generate": true,
+  "report_dir": "testsprite_tests",
+  "report_filename": "PLANO_TESTES_{feature}.md"
+}
+```
+
+Com esse config, basta rodar:
+
+```bash
+python cli.py -f descricao_funcionalidade.txt
+```
+
+E o Cognis já gera o relatório + estrutura de pastas automaticamente.
+
+### Múltiplos configs
+
+Você pode ter diferentes configs para diferentes projetos:
+
+```bash
+python cli.py -c cognis-projeto-a.json -f prompt.txt
+python cli.py -c cognis-projeto-b.json -f prompt.txt
 ```
 
 ---
