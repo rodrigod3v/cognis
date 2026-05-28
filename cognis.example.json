@@ -1,8 +1,8 @@
 {
   "project_path": ".",
-  "output_path": "generated_tests",
+  "output_path": "tests__{feature}",
   "extension": ".test.tsx",
-  "auto_generate": false,
+  "auto_generate": true,
   "report_dir": "testsprite_tests",
   "report_filename": "PLANO_TESTES_{feature}.md"
 }
